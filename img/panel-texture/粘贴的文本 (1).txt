@@ -1,0 +1,398 @@
+import tkinter as tk
+from tkinter import Frame
+from pathlib import Path
+from PIL import Image, ImageTk, ImageOps, ImageDraw
+from config.theme import (
+    BG_MAIN, TEXT_MAIN, TEXT_SOFT,
+    PAPER_BG, PAPER_BORDER,
+    CARD_DEFAULT, CARD_RUNNING, CARD_DONE, CARD_ADD,
+    CARD_BORDER, CARD_SHADOW,
+    BTN_FILL, BTN_SHADOW, BTN_TEXT,
+    TAPE_BEIGE, TAPE_ORANGE, TAPE_YELLOW,NEXT_BTN_DASH_THICKNESS,NEXT_BTN_DASH_LEN,NEXT_BTN_DASH_GAP_LEN
+)
+
+
+class LifeDirection(Frame):
+    def __init__(self, parent, on_next=None):
+        super().__init__(parent, bg=BG_MAIN)
+        self.on_next = on_next
+
+        self.canvas = tk.Canvas(
+            self,
+            width=900,
+            height=700,
+            bg=BG_MAIN,
+            highlightthickness=0
+        )
+        self.canvas.pack(fill="both", expand=True)
+
+        self.title_font = ("Mynerve", 30)
+        self.subtitle_font = ("Schoolbell", 18)
+        self.card_title_font = ("Microsoft YaHei UI", 20, "bold")
+        self.card_status_font = ("Microsoft YaHei UI", 11)
+        self.add_font = ("Schoolbell", 18)
+        self.button_font = ("Arial", 18, "bold")
+        self.next_btn_img = None
+        self.icon_font = ("Segoe UI Emoji", 24)
+
+
+
+
+
+
+        # ===== panel 区域 =====
+        self.panel_x1 = 40
+        self.panel_y1 = 150
+        self.panel_x2 = 820
+        self.panel_y2 = 525
+
+        # ===== panel 内部内容区 =====
+        self.inner_pad_x = 26
+        self.inner_pad_top = 18
+
+        # ===== card 布局 =====
+        self.card_w = 220
+        self.card_h = 82
+        self.gap_x = 24
+        self.gap_y = 24
+        self.cols = 3
+
+        # 真实数据：这里只放真正的方向 card
+        self.direction_cards = [
+            {
+                "title": "赚钱", "status": "未设置",
+                "icon": "🏛", "fill": CARD_DEFAULT,
+                "status_color": "#9c7357",
+                "tape": None
+            },
+            {
+                "title": "美白", "status": "执行中",
+                "icon": "✿", "fill": CARD_RUNNING,
+                "status_color": "#b17743",
+                "tape": TAPE_ORANGE
+            },
+            {
+                "title": "爱好", "status": "未设置",
+                "icon": "🎸", "fill": CARD_DEFAULT,
+                "status_color": "#9c7357",
+                "tape": None
+            },
+            {
+                "title": "健身", "status": "已完成",
+                "icon": "🏋", "fill": CARD_DONE,
+                "status_color": "#5d7a43",
+                "tape": None
+            }
+        ]
+
+        self.draw_ui()
+
+    def draw_ui(self):
+        self.canvas.delete("all")
+        self.draw_title()
+        self.draw_paper_panel()
+        self.draw_cards()
+        self.draw_next_button()
+
+    def draw_title(self):
+        self.canvas.create_text(
+            60, 70,
+            text="Life Directions",
+            anchor="w",
+            font=self.title_font,
+            fill=TEXT_MAIN
+        )
+
+        self.canvas.create_text(
+            60, 108,
+            text="Set your life directions to get started",
+            anchor="w",
+            font=self.subtitle_font,
+            fill=TEXT_MAIN
+        )
+
+    def draw_paper_panel(self):
+        x1, y1, x2, y2 = self.panel_x1, self.panel_y1, self.panel_x2, self.panel_y2
+
+        # 阴影
+        self.round_rect(
+            x1 + 3, y1 + 3, x2 + 3, y2 + 3, 16,
+            fill="#ebe3d8", outline=""
+        )
+
+        # 主体
+        self.round_rect(
+            x1, y1, x2, y2, 16,
+            fill=PAPER_BG, outline=PAPER_BORDER, width=1
+        )
+
+        # 内部细框
+        self.canvas.create_rectangle(
+            x1 + 20, y1 + 18, x2 - 20, y2 - 26,
+            outline="#e2d8cb",
+            width=1
+        )
+
+        # 左上大胶带
+        self.draw_tape(x1 + 48, y1 + 34, 110, 22, TAPE_BEIGE, angle=-18)
+
+    def draw_cards(self):
+        # 最后拼一个 Add Direction 卡片
+        cards_to_draw = self.direction_cards + [
+            {
+                "title": "+ Add Direction",
+                "status": "",
+                "icon": "",
+                "fill": CARD_ADD,
+                "status_color": TEXT_SOFT,
+                "tape": TAPE_YELLOW,
+                "is_add": True
+            }
+        ]
+
+        for i, card in enumerate(cards_to_draw):
+            x, y = self.get_card_position(i)
+            self.draw_single_card(card, x, y)
+
+    def get_card_position(self, index):
+        col = index % self.cols
+        row = index // self.cols
+
+        start_x = self.panel_x1 + self.inner_pad_x
+        start_y = self.panel_y1 + self.inner_pad_top
+
+        x = start_x + col * (self.card_w + self.gap_x)
+        y = start_y + row * (self.card_h + self.gap_y)
+        return x, y
+
+    def draw_single_card(self, card, x, y):
+        w = self.card_w
+        h = self.card_h
+        fill = card["fill"]
+
+        # 阴影
+        self.round_rect(
+            x, y + 4, x + w, y + h + 4, 12,
+            fill=CARD_SHADOW, outline=""
+        )
+
+        # 卡片主体
+        self.round_rect(
+            x, y, x + w, y + h, 12,
+            fill=fill, outline=CARD_BORDER, width=1
+        )
+
+        # 内层虚线
+        self.canvas.create_rectangle(
+            x + 12, y + 10, x + w - 12, y + h - 10,
+            outline="#d8c4ae",
+            width=1,
+            dash=(4, 3)
+        )
+
+        # 小胶带
+        if card.get("tape"):
+            self.draw_tape(x + 28, y + 6, 34, 14, card["tape"], angle=-8)
+
+        # Add card
+        if card.get("is_add"):
+            self.canvas.create_text(
+                x + 26, y + h / 2,
+                text=card["title"],
+                anchor="w",
+                font=self.add_font,
+                fill=TEXT_MAIN
+            )
+            return
+
+        # icon
+        self.canvas.create_text(
+            x + 38, y + h / 2 + 1,
+            text=card["icon"],
+            font=self.icon_font,
+            fill="#9b6d47"
+        )
+
+        # title
+        self.canvas.create_text(
+            x + 88, y + 31,
+            text=card["title"],
+            anchor="w",
+            font=self.card_title_font,
+            fill=TEXT_MAIN
+        )
+
+        # status
+        self.canvas.create_text(
+            x + 88, y + 56,
+            text=card["status"],
+            anchor="w",
+            font=self.card_status_font,
+            fill=card["status_color"]
+        )
+
+    def draw_next_button(self):
+        x, y, w, h = self.panel_x2 - 155, 540, 155, 50
+
+        # 阴影
+        self.round_rect(
+            x + 2, y +2, x + w + 3, y + h + 3, 40,
+            fill="#d8c1ad", outline=""
+        )
+
+        # 生成带浅色纹理的深色按钮
+        self.next_btn_img = self.make_textured_button_image(
+            width=w,
+            height=h,
+            base_hex=BTN_FILL,
+            border_hex="#ad7547",
+            radius=16
+        )
+
+        btn_id = self.canvas.create_image(
+            x, y,
+            image=self.next_btn_img,
+            anchor="nw"
+        )
+
+        text_id = self.canvas.create_text(
+            x + w / 2,
+            y + h / 2,
+            text="Next",
+            font=self.button_font,
+            fill=BTN_TEXT,
+            anchor="center"
+        )
+
+        self.canvas.tag_bind(btn_id, "<Button-1>", self.handle_next)
+        self.canvas.tag_bind(text_id, "<Button-1>", self.handle_next)
+
+    def handle_next(self, event=None):
+        if self.on_next:
+            self.on_next()
+
+    def add_direction_card(self, title="新方向", status="未设置", icon="✿"):
+        self.direction_cards.append({
+            "title": title,
+            "status": status,
+            "icon": icon,
+            "fill": CARD_DEFAULT,
+            "status_color": "#9c7357",
+            "tape": None
+        })
+        self.draw_ui()
+
+    def make_textured_button_image(self, width, height, base_hex, border_hex, radius=16):
+        base = Image.new("RGBA", (width, height), base_hex)
+
+        # ===== 自己生成浅色细纹，不依赖外部 texture 图 =====
+        noise = Image.effect_noise((width, height), 100).convert("L")
+        noise = ImageOps.autocontrast(noise, cutoff=4)
+        noise = noise.point(lambda p: int((255 - p) * 0.15))
+
+        # 浅色纹理层：白偏米一点
+        texture = Image.new("RGBA", (width, height), (255, 250, 242, 0))
+        texture.putalpha(noise)
+
+        button = Image.alpha_composite(base, texture)
+
+        # 上方一点微光，像纸面受光
+        highlight = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+        draw_hi = ImageDraw.Draw(highlight)
+        draw_hi.rounded_rectangle(
+            (1, 1, width - 2, int(height * 0.52)),
+            radius=radius,
+            fill=(255, 255, 255, 18)
+        )
+        button = Image.alpha_composite(button, highlight)
+
+        # 圆角 mask
+        mask = Image.new("L", (width, height), 0)
+        draw_mask = ImageDraw.Draw(mask)
+        draw_mask.rounded_rectangle(
+            (0, 0, width - 1, height - 1),
+            radius=radius,
+            fill=255
+        )
+
+        rounded = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        rounded.paste(button, (0, 0), mask)
+
+        # 外边框
+        draw_rgba = ImageDraw.Draw(rounded)
+        draw_rgba.rounded_rectangle(
+            (0, 0, width - 1, height - 1),
+            radius=radius,
+            outline=border_hex,
+            width=1
+        )
+
+
+        # 内层虚线（用很多小短线假装虚线）
+        dash_color = "#e3b387"
+        x1, y1, x2, y2 = 5, 4, width - 6, height - 5
+        dash_len = NEXT_BTN_DASH_LEN
+        gap_len = NEXT_BTN_DASH_GAP_LEN
+
+        # 上边
+        for x in range(x1 + 12, x2 - 12, dash_len + gap_len):
+            draw_rgba.line((x, y1, min(x + dash_len, x2 - 12), y1), fill=dash_color, width=NEXT_BTN_DASH_THICKNESS)
+
+        # 下边
+        for x in range(x1 + 12, x2 - 12, dash_len + gap_len):
+            draw_rgba.line((x, y2, min(x + dash_len, x2 - 12), y2), fill=dash_color, width=NEXT_BTN_DASH_THICKNESS)
+
+        # 左边
+        for y in range(y1 + 12, y2 - 12, dash_len + gap_len):
+            draw_rgba.line((x1, y, x1, min(y + dash_len, y2 - 12)), fill=dash_color, width=NEXT_BTN_DASH_THICKNESS)
+
+        # 右边
+        for y in range(y1 + 12, y2 - 12, dash_len + gap_len):
+            draw_rgba.line((x2, y, x2, min(y + dash_len, y2 - 12)), fill=dash_color, width=NEXT_BTN_DASH_THICKNESS)
+
+        return ImageTk.PhotoImage(rounded)
+
+
+    def draw_tape(self, cx, cy, w, h, color, angle=0):
+        x1 = cx - w / 2
+        y1 = cy - h / 2
+        x2 = cx + w / 2
+        y2 = cy + h / 2
+
+        skew = 8
+        self.canvas.create_polygon(
+            x1, y1 + 4,
+            x1 + skew, y1,
+            x2, y1 + 2,
+            x2 - skew, y2,
+            x1 + 3, y2 - 1,
+            fill=color,
+            outline=""
+        )
+
+        self.canvas.create_line(
+            x1 + 10, y1 + 4, x2 - 10, y2 - 2,
+            fill="#f5e6b8", width=1
+        )
+
+    def round_rect(self, x1, y1, x2, y2, r=16, **kwargs):
+        points = [
+            x1 + r, y1,
+            x2 - r, y1,
+            x2, y1,
+            x2, y1 + r,
+            x2, y2 - r,
+            x2, y2,
+            x2 - r, y2,
+            x1 + r, y2,
+            x1, y2,
+            x1, y2 - r,
+            x1, y1 + r,
+            x1, y1
+        ]
+        return self.canvas.create_polygon(
+            points,
+            smooth=True,
+            splinesteps=36,
+            **kwargs
+        )
