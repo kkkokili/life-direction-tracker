@@ -51,6 +51,8 @@ class ConfigureDialog(tk.Toplevel):
 
         # 容错：如果旧数据没这些字段，就补上
         self.normalize_data()
+        self.nav_stack = [(direction_title, self.data)]
+        self.current_data = self.data
 
         # ========= 配色 =========
         self.colors = {
@@ -111,10 +113,10 @@ class ConfigureDialog(tk.Toplevel):
                 "direction_id": None,
                 "direction_title": "赚钱",
                 "sections": [
-                    {"section_id": None, "name": "找工作", "sort_order": 0},
-                    {"section_id": None, "name": "副业", "sort_order": 1},
-                    {"section_id": None, "name": "兼职", "sort_order": 1},
-                    {"section_id": None, "name": "创业", "sort_order": 1},
+                    {"section_id": None, "name": "找工作", "sort_order": 0,"icon_path": "img/emoji/1f30b.png"},
+                    {"section_id": None, "name": "副业", "sort_order": 1,"icon_path": "img/emoji/1f32a-fe0f.png"},
+                    {"section_id": None, "name": "兼职", "sort_order": 1,"icon_path": "img/emoji/dollar.png"},
+                    {"section_id": None, "name": "创业", "sort_order": 1,"icon_path": "img/emoji/1f5fd.png"},
                 ],
                 "seeds": [
 
@@ -127,10 +129,10 @@ class ConfigureDialog(tk.Toplevel):
 
                 ],
                 "seeds": [
-                    {"seed_id": None, "section_id": None, "name": "早晚护肤", "sort_order": 0, "icon": "☐"},
-                    {"seed_id": None, "section_id": None, "name": "早晚一张面膜", "sort_order": 0, "icon": "☐"},
-                    {"seed_id": None, "section_id": None, "name": "每天一个番茄", "sort_order": 1, "icon": "☐"},
-                    {"seed_id": None, "section_id": None, "name": "出门涂防晒", "sort_order": 1, "icon": "☐"},
+                    {"seed_id": None, "section_id": None, "name": "早晚护肤", "sort_order": 0},
+                    {"seed_id": None, "section_id": None, "name": "早晚一张面膜", "sort_order": 0},
+                    {"seed_id": None, "section_id": None, "name": "每天一个番茄", "sort_order": 1},
+                    {"seed_id": None, "section_id": None, "name": "出门涂防晒", "sort_order": 1},
                 ]
             },
             "健身": {
@@ -150,8 +152,8 @@ class ConfigureDialog(tk.Toplevel):
                 "direction_id": None,
                 "direction_title": "爱好",
                 "sections": [
-                    {"section_id": None, "name": "音乐", "sort_order": 0},
-                    {"section_id": None, "name": "阅读", "sort_order": 1},
+                    {"section_id": None, "name": "音乐", "sort_order": 0,"icon_path": "img/emoji/1f3a7.png"},
+                    {"section_id": None, "name": "阅读", "sort_order": 1,"icon_path": "img/emoji/1f4d6.png"},
                 ],
                 "seeds": [
                     {"seed_id": None, "section_id": None, "name": "练琴 20 分钟", "sort_order": 0, "icon": "☐"},
@@ -190,19 +192,50 @@ class ConfigureDialog(tk.Toplevel):
             self.data["seeds"] = []
 
         for i, sec in enumerate(self.data["sections"]):
-            sec.setdefault("section_id", None)
-            sec.setdefault("name", f"分类{i+1}")
-            sec.setdefault("sort_order", i)
-            sec.setdefault("icon_path", "")
-            # sec.setdefault("color", "yellow" if i % 2 == 0 else "blue")
+            self.normalize_section(sec, i)
 
         for i, seed in enumerate(self.data["seeds"]):
-            seed.setdefault("seed_id", None)
-            seed.setdefault("section_id", None)
-            seed.setdefault("name", f"Seed {i+1}")
-            seed.setdefault("sort_order", i)
-            seed.setdefault("icon", "☐")
+            self.normalize_seed(seed, i)
 
+    def normalize_section(self, section, index=0):
+        section.setdefault("section_id", None)
+        section.setdefault("name", f"分类{index+1}")
+        section.setdefault("sort_order", index)
+        section.setdefault("icon_path", "")
+        section.setdefault("is_configured", False)
+        section.setdefault("sections", [])
+        section.setdefault("seeds", [])
+
+        for child_index, child in enumerate(section["sections"]):
+            self.normalize_section(child, child_index)
+
+        for seed_index, seed in enumerate(section["seeds"]):
+            self.normalize_seed(seed, seed_index)
+
+    def normalize_seed(self, seed, index=0):
+        seed.setdefault("seed_id", None)
+        seed.setdefault("section_id", None)
+        seed.setdefault("name", f"Seed {index+1}")
+        seed.setdefault("sort_order", index)
+        seed.setdefault("icon", "☐")
+
+    def get_category_config_status(self, section):
+        if not section.get("is_configured", False):
+            return "未配置"
+
+        child_sections = section.get("sections", [])
+        if child_sections:
+            if all(self.is_category_configured(child) for child in child_sections):
+                return ""
+            return "未配置完"
+
+        if section.get("seeds", []):
+            return ""
+
+        return "未配置完"
+
+    def is_category_configured(self, section):
+        return self.get_category_config_status(section) == ""
     # =========================
     # 4. 圆角矩形（canvas）
     # =========================
@@ -245,7 +278,7 @@ class ConfigureDialog(tk.Toplevel):
         self.texture_imgs.append(tk_img)
         return tk_img
 
-    def load_category_icon(self, icon_path, size=28):
+    def load_category_icon(self, icon_path, size=38):
         if not icon_path:
             return None
 
@@ -478,6 +511,18 @@ class ConfigureDialog(tk.Toplevel):
     # =========================
     # 8. 顶部
     # =========================
+    def jump_to_nav(self, index):
+        if index < 0 or index >= len(self.nav_stack):
+            return
+
+        self.nav_stack = self.nav_stack[:index + 1]
+        self.current_data = self.nav_stack[-1][1]
+        self.is_edit_mode = False
+        self.render_all()
+
+    def go_back_category(self):
+        self.jump_to_nav(len(self.nav_stack) - 2)
+
     def build_top(self):
         top = tk.Frame(self.body, bg=self.colors["panel_bg"])
         top.pack(fill="x")
@@ -494,14 +539,47 @@ class ConfigureDialog(tk.Toplevel):
         left = tk.Frame(top, bg=self.colors["panel_bg"])
         left.pack(side="left", anchor="nw")
 
-        title_label = tk.Label(
-            left,
-            text=self.direction_title,
-            font=("Microsoft YaHei UI", 24, "bold"),
-            fg=self.colors["title"],
-            bg=self.colors["panel_bg"]
-        )
-        title_label.pack(anchor="w")
+        title_row = tk.Frame(left, bg=self.colors["panel_bg"])
+        title_row.pack(anchor="w")
+
+        title_link_font = tkfont.Font(family="Microsoft YaHei UI", size=20, weight="bold")
+        title_hover_font = tkfont.Font(family="Microsoft YaHei UI", size=20, weight="bold", underline=True)
+
+        for index, (title, _node) in enumerate(self.nav_stack):
+            is_current = index == len(self.nav_stack) - 1
+
+            if is_current:
+                title_part = tk.Label(
+                    title_row,
+                    text=title,
+                    font=title_link_font,
+                    fg=self.colors["title"],
+                    bg=self.colors["panel_bg"]
+                )
+                title_part.pack(side="left")
+            else:
+                title_part = tk.Label(
+                    title_row,
+                    text=title,
+                    font=title_link_font,
+                    fg="#8a634c",
+                    bg=self.colors["panel_bg"],
+                    cursor="hand2"
+                )
+                title_part.pack(side="left")
+                title_part.bind("<Button-1>", lambda event, i=index: self.jump_to_nav(i))
+                title_part.bind("<Enter>", lambda event, label=title_part: label.configure(font=title_hover_font, fg=self.colors["title"], bg=self.colors["panel_bg"]))
+                title_part.bind("<Leave>", lambda event, label=title_part: label.configure(font=title_link_font, fg="#8a634c", bg=self.colors["panel_bg"]))
+
+            if index < len(self.nav_stack) - 1:
+                sep = tk.Label(
+                    title_row,
+                    text=" · ",
+                    font=title_link_font,
+                    fg="#c49a78",
+                    bg=self.colors["panel_bg"]
+                )
+                sep.pack(side="left")
 
         subtitle_label = tk.Label(
             left,
@@ -511,7 +589,6 @@ class ConfigureDialog(tk.Toplevel):
             bg=self.colors["panel_bg"]
         )
         subtitle_label.pack(anchor="w", pady=(8, 0))
-
         right = tk.Frame(top, bg=self.colors["panel_bg"])
         right.pack(side="right", anchor="ne", pady=(38, 0))
 
@@ -554,6 +631,7 @@ class ConfigureDialog(tk.Toplevel):
         )
         title.pack(side="left")
 
+
         line_wrap = tk.Frame(row, bg=self.colors["panel_bg"], height=40)
         line_wrap.pack(side="left", fill="x", expand=True, padx=(12, 0))
         line_wrap.pack_propagate(False)
@@ -591,7 +669,7 @@ class ConfigureDialog(tk.Toplevel):
     # =========================
     def render_categories(self):
         sections = sorted(
-            self.data.get("sections", []),
+            self.current_data.get("sections", []),
             key=lambda s: s.get("sort_order", 0)
         )
 
@@ -676,6 +754,19 @@ class ConfigureDialog(tk.Toplevel):
         )
         title.pack(side="left")
 
+        config_status = self.get_category_config_status(section)
+        if config_status:
+            status = tk.Label(
+                left,
+                text=config_status,
+                font=("Microsoft YaHei UI", 9, "bold"),
+                fg="#9c7357",
+                bg="#fff3e8",
+                padx=8,
+                pady=2
+            )
+            status.pack(side="left", padx=(10, 0))
+
         if self.is_edit_mode:
             btn_wrap = tk.Frame(content, bg=fill, width=34, height=34)
             btn_wrap.pack(side="right", padx=(10, 0))
@@ -703,7 +794,7 @@ class ConfigureDialog(tk.Toplevel):
             arrow.pack(side="right", padx=(12, 6))
 
             def open_section(event=None, s=section):
-                print("open section:", s["name"])
+                self.open_category_config(s)
 
             canvas.bind("<Button-1>", open_section)
             content.bind("<Button-1>", open_section)
@@ -767,7 +858,7 @@ class ConfigureDialog(tk.Toplevel):
     # =========================
     def render_seeds(self):
         seeds = sorted(
-            self.data.get("seeds", []),
+            self.current_data.get("seeds", []),
             key=lambda s: s.get("sort_order", 0)
         )
 
@@ -826,7 +917,7 @@ class ConfigureDialog(tk.Toplevel):
             return
 
         seeds = sorted(
-            self.data.get("seeds", []),
+            self.current_data.get("seeds", []),
             key=lambda s: s.get("sort_order", 0)
         )
         if not seeds:
@@ -1173,6 +1264,19 @@ class ConfigureDialog(tk.Toplevel):
         )
         save_btn.pack(side="right", padx=(0, 10))
 
+        if len(self.nav_stack) > 1:
+            back_btn = self.make_canvas_action_btn(
+                btn_wrap,
+                text="Back",
+                command=self.go_back_category,
+                width=112,
+                height=48,
+                fill=self.colors["btn_bg"],
+                border=self.colors["btn_border"],
+                text_color=self.colors["btn_fg"]
+            )
+            back_btn.pack(side="right", padx=(0, 10))
+
     # =========================
     # 13. Edit 模式切换
     # =========================
@@ -1186,13 +1290,23 @@ class ConfigureDialog(tk.Toplevel):
     def handle_add_menu(self):
         dialog=ConfigureDialogAdd(self)
 
+    def open_category_config(self, section):
+        self.normalize_section(section)
+        self.current_data = section
+        self.nav_stack.append((section["name"], section))
+        self.is_edit_mode = False
+        self.render_all()
+
     def handle_add_category_save(self, category_title, icon_path):
-        next_order = len(self.data["sections"])
-        self.data["sections"].append({
+        next_order = len(self.current_data["sections"])
+        self.current_data["sections"].append({
             "section_id": None,
             "name": category_title,
             "sort_order": next_order,
-            "icon_path": icon_path
+            "icon_path": icon_path,
+            "is_configured": False,
+            "sections": [],
+            "seeds": []
         })
         self.render_all()
 
@@ -1202,8 +1316,8 @@ class ConfigureDialog(tk.Toplevel):
         if not name:
             return
 
-        next_order = len(self.data["seeds"])
-        self.data["seeds"].append({
+        next_order = len(self.current_data["seeds"])
+        self.current_data["seeds"].append({
             "seed_id": None,
             "section_id": None,
             "name": name,
@@ -1242,6 +1356,12 @@ class ConfigureDialog(tk.Toplevel):
         self.destroy()
 
     def handle_save(self):
+        self.current_data["is_configured"] = True
+
+        if len(self.nav_stack) > 1:
+            self.go_back_category()
+            return
+
         if self.on_save:
             self.on_save(self.parent,self.direction_title,self.data)
         self.destroy()

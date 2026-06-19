@@ -67,15 +67,34 @@ def open_config_dialog(page, card):
     dialog = ConfigureDialog(
         page,
         direction_title=card["title"],
-        on_save=save_direction_config
+        on_save=save_direction_config,
+        initial_data=card.get("config_data")
     )
     dialog.focus_force()
+
+def is_section_configured(section):
+    if not section.get("is_configured", False):
+        return False
+
+    child_sections = section.get("sections", [])
+    if child_sections:
+        return all(is_section_configured(child) for child in child_sections)
+
+    return bool(section.get("seeds", []))
+
+
+def is_config_data_complete(config_data):
+    return all(
+        is_section_configured(section)
+        for section in config_data.get("sections", [])
+    )
+
 
 #这个还没写完
 def save_direction_config(page, direction_title, config_data):
     for card in page.direction_cards:
         if card["title"] == direction_title:
-            card["status"] = "pending_activation"
+            card["status"] = "pending_activation" if is_config_data_complete(config_data) else "not_configured"
             card["config_data"] = config_data #这
             break
 

@@ -489,5 +489,8 @@ class LifeDirection(Frame):
         return ImageTk.PhotoImage(rounded)
 
     def handle_next(self, event=None):
+        if any(card.get("status") == "not_configured" for card in self.direction_cards):
+            return
+
         if self.on_next:
             self.on_next()
