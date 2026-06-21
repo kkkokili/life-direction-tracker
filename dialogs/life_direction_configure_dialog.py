@@ -2,6 +2,7 @@ import tkinter as tk
 from pathlib import Path
 import tkinter.font as tkfont
 from dialogs.configue_dialog_add import ConfigureDialogAdd
+from dialogs.configue_dialog_add_seeds import ConfigureDialogAddSeeds
 from PIL import Image, ImageTk, ImageOps, ImageDraw
 from config.theme import (
     BG_MAIN,
@@ -43,8 +44,14 @@ class ConfigureDialog(tk.Toplevel):
         self.tape_imgs = []
         self.bg_imgs = []
         self.category_icon_imgs = []
+        self.ui_icon_imgs = []
         self.seed_texture_pil = None
         self._seed_redraw_job = None
+        self._seed_drag_job = None
+        self._seed_drag_seed = None
+        self._seed_drag_active = False
+        self._seed_drag_start_y = 0
+        self._seed_drag_layouts = []
 
         # ========= SQLite-friendly 数据结构 =========
         self.data = initial_data if initial_data else self.get_default_data(direction_title)
@@ -218,6 +225,10 @@ class ConfigureDialog(tk.Toplevel):
         seed.setdefault("name", f"Seed {index+1}")
         seed.setdefault("sort_order", index)
         seed.setdefault("icon", "☐")
+        seed.setdefault("mode", "seed")
+        seed.setdefault("resources", [])
+        seed.setdefault("execution", {})
+        seed.setdefault("dependency", {})
 
     def get_category_config_status(self, section):
         if not section.get("is_configured", False):
@@ -292,6 +303,68 @@ class ConfigureDialog(tk.Toplevel):
         tk_img = ImageTk.PhotoImage(img)
         self.category_icon_imgs.append(tk_img)
         return tk_img
+
+    def load_ui_icon(self, icon_path, size=14):
+        path = Path(icon_path)
+        if not path.exists():
+            return None
+
+        img = Image.open(path).convert("RGBA")
+        alpha = img.getchannel("A")
+        bbox = alpha.getbbox()
+        if bbox:
+            img = img.crop(bbox)
+
+        img = ImageOps.contain(img, (size, size), Image.LANCZOS)
+        tk_img = ImageTk.PhotoImage(img)
+        self.ui_icon_imgs.append(tk_img)
+        return tk_img
+
+    def draw_edit_icon_button(self, canvas, x1, y1, x2, y2, tag, icon_path, command, icon_size=14):
+        states = {
+            "default": {"fill": "", "outline": ""},
+            "hover": {"fill": "#f5eee8", "outline": ""},
+            "active": {"fill": "#f1decf", "outline": ""},
+        }
+
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+        radius = min(x2 - x1, y2 - y1) / 2
+
+        shape_id = self.round_rect(
+            canvas,
+            x1,
+            y1,
+            x2,
+            y2,
+            6,
+            fill=states["default"]["fill"],
+            outline=states["default"]["outline"],
+            width=1,
+            tags=(tag,)
+        )
+
+        icon = self.load_ui_icon(icon_path, size=icon_size)
+        if icon:
+            canvas.create_image(
+                (x1 + x2) / 2,
+                (y1 + y2) / 2,
+                image=icon,
+                anchor="center",
+                tags=(tag,)
+            )
+
+        def apply_state(state):
+            canvas.itemconfigure(
+                shape_id,
+                fill=states[state]["fill"],
+                outline=states[state]["outline"]
+            )
+
+        canvas.tag_bind(tag, "<Enter>", lambda e: apply_state("hover"))
+        canvas.tag_bind(tag, "<Leave>", lambda e: apply_state("default"))
+        canvas.tag_bind(tag, "<ButtonPress-1>", lambda e: apply_state("active"))
+        canvas.tag_bind(tag, "<ButtonRelease-1>", lambda e: (apply_state("hover"), command()))
 
     # =========================
     # 6. 纯 canvas action 按钮
@@ -990,6 +1063,8 @@ class ConfigureDialog(tk.Toplevel):
             layouts.append(layout)
             y += layout["h"] + row_gap
 
+        self._seed_drag_layouts = layouts
+
         content_h = y - row_gap + bottom_pad
         paper_h = max(120, content_h - paper_y + 10)
 
@@ -1033,7 +1108,7 @@ class ConfigureDialog(tk.Toplevel):
         outer_extra = 24
 
         if self.is_edit_mode:
-            right_widget_w = 42
+            right_widget_w = 72
             gap_w = 10
         else:
             right_widget_w = 20
@@ -1144,22 +1219,32 @@ class ConfigureDialog(tk.Toplevel):
         y = layout["y"]
         w = layout["w"]
         h = layout["h"]
+        card_tag = f"seed_card_{id(seed)}"
+        card_tags = ("seed_card", card_tag)
+        is_dragging = self._seed_drag_active and self._seed_drag_seed is seed
+        shadow_fill = "#d9c7b8" if is_dragging else self.colors["card_shadow"]
+        seed_fill = "#fffdf9" if is_dragging else self.colors["seed_bg"]
+        seed_border = "#dca270" if is_dragging else self.colors["seed_border"]
+        dash_border = "#d98f55" if is_dragging else self.colors["dash_border"]
+        shadow_offset = 8 if is_dragging else 4
 
         self.round_rect(
             canvas,
-            x + 4, y + 4, x + w - 4, y + h - 4,
+            x + 4, y + shadow_offset, x + w - 4, y + h + shadow_offset - 4,
             25,
-            fill=self.colors["card_shadow"],
-            outline=""
+            fill=shadow_fill,
+            outline="",
+            tags=card_tags
         )
 
         self.round_rect(
             canvas,
             x + 4, y + 2, x + w - 4, y + h - 6,
             25,
-            fill=self.colors["seed_bg"],
-            outline=self.colors["seed_border"],
-            width=1
+            fill=seed_fill,
+            outline=seed_border,
+            width=2 if is_dragging else 1,
+            tags=card_tags
         )
 
         self.round_rect(
@@ -1167,9 +1252,10 @@ class ConfigureDialog(tk.Toplevel):
             x + 8, y + 7, x + w - 8, y + h - 11,
             15,
             fill="",
-            outline=self.colors["dash_border"],
+            outline=dash_border,
             width=1,
-            dash=(2, 2)
+            dash=(2, 2),
+            tags=card_tags
         )
 
         noise_img = self.make_noise_overlay_image(
@@ -1181,7 +1267,8 @@ class ConfigureDialog(tk.Toplevel):
         canvas.create_image(
             x + 4, y + 2,
             image=noise_img,
-            anchor="nw"
+            anchor="nw",
+            tags=card_tags
         )
 
         text_x = x + 24
@@ -1194,41 +1281,135 @@ class ConfigureDialog(tk.Toplevel):
             justify="left",
             font=layout["font"],
             fill=self.colors["title"],
-            width=layout["text_wrap_w"] if layout["text_wrap_w"] > 0 else 0
+            width=layout["text_wrap_w"] if layout["text_wrap_w"] > 0 else 0,
+            tags=card_tags
         )
+
+        if not self.is_edit_mode:
+            canvas.tag_bind(
+                card_tag,
+                "<ButtonPress-1>",
+                lambda e, s=seed: self.start_seed_long_press(e, s)
+            )
+            canvas.tag_bind(
+                card_tag,
+                "<B1-Motion>",
+                self.drag_seed_motion
+            )
+            canvas.tag_bind(
+                card_tag,
+                "<ButtonRelease-1>",
+                self.end_seed_drag
+            )
 
         if self.is_edit_mode:
             btn_w = 24
             btn_h = 24
-            btn_x2 = x + w - 22
-            btn_x1 = btn_x2 - btn_w
+            delete_x2 = x + w - 22
+            delete_x1 = delete_x2 - btn_w
+            config_x2 = delete_x1 - 8
+            config_x1 = config_x2 - btn_w
             btn_y1 = y + (h - btn_h) / 2
             btn_y2 = btn_y1 + btn_h
 
             btn_tag = f"delete_seed_{id(seed)}"
+            config_tag = f"config_seed_{id(seed)}"
 
-            self.round_rect(
+            self.draw_edit_icon_button(
                 canvas,
-                btn_x1, btn_y1, btn_x2, btn_y2,
-                8,
-                fill=self.colors["delete_bg"],
-                outline=self.colors["delete_border"],
-                width=1,
-                tags=(btn_tag,)
+                config_x1, btn_y1, config_x2, btn_y2,
+                config_tag,
+                Path(__file__).resolve().parent.parent / "img" / "emoji" / "setting.png",
+                lambda s=seed: self.open_seed_config(s),
+                icon_size=14
             )
-            canvas.create_text(
-                (btn_x1 + btn_x2) / 2,
-                (btn_y1 + btn_y2) / 2 - 1,
-                text="✕",
-                font=("Microsoft YaHei UI", 11, "bold"),
-                fill=self.colors["delete_fg"],
-                tags=(btn_tag,)
-            )
-            canvas.tag_bind(
+
+            self.draw_edit_icon_button(
+                canvas,
+                delete_x1, btn_y1, delete_x2, btn_y2,
                 btn_tag,
-                "<Button-1>",
-                lambda e, s=seed: self.delete_seed(s)
+                Path(__file__).resolve().parent.parent / "img" / "emoji" / "delete.png",
+                lambda s=seed: self.delete_seed(s),
+                icon_size=14
             )
+
+    def start_seed_long_press(self, event, seed):
+        self.cancel_seed_drag()
+        self._seed_drag_seed = seed
+        self._seed_drag_start_y = event.y
+        self._seed_drag_active = False
+        if hasattr(self, "seed_list_canvas") and self.seed_list_canvas.winfo_exists():
+            self.seed_list_canvas.bind("<B1-Motion>", self.drag_seed_motion)
+            self.seed_list_canvas.bind("<ButtonRelease-1>", self.end_seed_drag)
+        self._seed_drag_job = self.after(500, self.activate_seed_drag)
+
+    def activate_seed_drag(self):
+        self._seed_drag_job = None
+        if self._seed_drag_seed is None:
+            return
+
+        self._seed_drag_active = True
+        if hasattr(self, "seed_list_canvas") and self.seed_list_canvas.winfo_exists():
+            self.seed_list_canvas.configure(cursor="fleur")
+            self.redraw_seed_list_canvas()
+
+    def drag_seed_motion(self, event):
+        if self._seed_drag_job is not None and abs(event.y - self._seed_drag_start_y) > 6:
+            self.cancel_seed_drag()
+            return
+
+        if not self._seed_drag_active or self._seed_drag_seed is None:
+            return
+
+        target_index = self.get_seed_drag_target_index(event.y)
+        seeds = sorted(
+            self.current_data.get("seeds", []),
+            key=lambda s: s.get("sort_order", 0)
+        )
+
+        if self._seed_drag_seed not in seeds:
+            return
+
+        current_index = seeds.index(self._seed_drag_seed)
+        if target_index == current_index:
+            return
+
+        target_index = max(0, min(target_index, len(seeds) - 1))
+        moved = seeds.pop(current_index)
+        seeds.insert(target_index, moved)
+
+        for i, seed in enumerate(seeds):
+            seed["sort_order"] = i
+
+        self.redraw_seed_list_canvas()
+
+    def get_seed_drag_target_index(self, y):
+        if not self._seed_drag_layouts:
+            return 0
+
+        for index, layout in enumerate(self._seed_drag_layouts):
+            mid_y = layout["y"] + layout["h"] / 2
+            if y < mid_y:
+                return index
+
+        return len(self._seed_drag_layouts) - 1
+
+    def end_seed_drag(self, event=None):
+        self.cancel_seed_drag()
+
+    def cancel_seed_drag(self):
+        if self._seed_drag_job is not None:
+            self.after_cancel(self._seed_drag_job)
+
+        self._seed_drag_job = None
+        self._seed_drag_seed = None
+        self._seed_drag_active = False
+
+        if hasattr(self, "seed_list_canvas") and self.seed_list_canvas.winfo_exists():
+            self.seed_list_canvas.configure(cursor="")
+            self.redraw_seed_list_canvas()
+            self.seed_list_canvas.unbind("<B1-Motion>")
+            self.seed_list_canvas.unbind("<ButtonRelease-1>")
 
     # =========================
     # 12. 底部按钮
@@ -1332,9 +1513,62 @@ class ConfigureDialog(tk.Toplevel):
         else:
             self.render_all()
 
+    def handle_add_seed_save(self, payload):
+        name = payload.get("item_name", "").strip()
+        if not name:
+            name = "未命名事项"
+
+        next_order = len(self.current_data["seeds"])
+        seed = {
+            "seed_id": None,
+            "section_id": None,
+            "name": name,
+            "sort_order": next_order,
+            "icon": "☐",
+            "mode": payload.get("mode", "seed"),
+            "resources": payload.get("resources", []),
+            "execution": payload.get("execution", {}),
+            "dependency": payload.get("dependency", {}),
+        }
+        self.normalize_seed(seed, next_order)
+        self.current_data["seeds"].append(seed)
+
+        if hasattr(self, "seed_list_canvas") and self.seed_list_canvas.winfo_exists():
+            self.redraw_seed_list_canvas()
+            self._on_content_configure(None)
+        else:
+            self.render_all()
+
+    def open_seed_config(self, seed):
+        self.normalize_seed(seed)
+        ConfigureDialogAddSeeds(
+            self,
+            on_save=lambda payload, current_seed=seed: self.handle_update_seed_save(current_seed, payload),
+            initial_data=seed
+        )
+
+    def handle_update_seed_save(self, seed, payload):
+        name = payload.get("item_name", "").strip()
+        if not name:
+            name = "未命名事项"
+
+        seed["name"] = name
+        seed["mode"] = payload.get("mode", seed.get("mode", "seed"))
+        seed["resources"] = payload.get("resources", seed.get("resources", []))
+        seed["execution"] = payload.get("execution", seed.get("execution", {}))
+        seed["dependency"] = payload.get("dependency", seed.get("dependency", {}))
+        self.normalize_seed(seed, seed.get("sort_order", 0))
+
+        if hasattr(self, "seed_list_canvas") and self.seed_list_canvas.winfo_exists():
+            self.redraw_seed_list_canvas()
+            self._on_content_configure(None)
+        else:
+            self.render_all()
+
     def delete_section(self, section):
-        self.data["sections"] = [s for s in self.data["sections"] if s is not section]
-        for i, sec in enumerate(self.data["sections"]):
+        sections = self.current_data.get("sections", [])
+        self.current_data["sections"] = [s for s in sections if s is not section]
+        for i, sec in enumerate(self.current_data["sections"]):
             sec["sort_order"] = i
         self.render_all()
 
@@ -1381,26 +1615,15 @@ class ConfigureDialog(tk.Toplevel):
         )
         btn_canvas.place(x=x, y=y)
 
-        pad = 2
-        btn_canvas.create_oval(
+        pad = 4
+        self.draw_edit_icon_button(
+            btn_canvas,
             pad, pad, size - pad, size - pad,
-            fill=fill,
-            outline=outline,
-            width=1.2,
-            tags="circle"
+            "delete_btn",
+            Path(__file__).resolve().parent.parent / "img" / "emoji" / "delete.png",
+            command,
+            icon_size=14
         )
-
-        btn_canvas.create_text(
-            size / 2, size / 2 - 1,
-            text="−",
-            font=("Microsoft YaHei UI", 16, "bold"),
-            fill=text_color,
-            tags="minus"
-        )
-
-        btn_canvas.bind("<Button-1>", lambda e: command())
-        btn_canvas.tag_bind("circle", "<Button-1>", lambda e: command())
-        btn_canvas.tag_bind("minus", "<Button-1>", lambda e: command())
 
         return btn_canvas
 

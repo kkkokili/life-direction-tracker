@@ -19,6 +19,14 @@ class App:
         self.root.resizable(False, False)
         self.root.configure(bg=BG_MAIN)
 
+        self.current_page = None
+        self.show_loading()
+        self.root.update_idletasks()
+        self.bring_to_front()
+        self.root.after(50, self.bring_to_front)
+        self.root.after(1, self.bootstrap)
+
+    def bootstrap(self):
         load_private_font("font/Mynerve-Regular.ttf")
         load_private_font("font/Schoolbell-Regular.ttf")
         load_private_font("font/TheGirlNextDoor-Regular.ttf")
@@ -26,11 +34,28 @@ class App:
         load_private_font("font/ComicRelief-Regular.ttf")
         load_private_font("font/Sniglet-Regular.ttf")
 
-
-        self.current_page = None
-
-
         self.show_life_direction()
+        self.root.after(1, self.bring_to_front)
+
+    def bring_to_front(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.attributes("-topmost", True)
+        self.root.after(100, lambda: self.root.attributes("-topmost", False))
+        self.root.focus_force()
+
+    def show_loading(self):
+        self.clear_page()
+        self.current_page = tk.Frame(self.root, bg=BG_MAIN)
+        loading = tk.Label(
+            self.current_page,
+            text="Loading...",
+            font=("Microsoft YaHei UI", 13),
+            fg="#6d5b52",
+            bg=BG_MAIN
+        )
+        loading.place(relx=0.5, rely=0.5, anchor="center")
+        self.current_page.pack(fill="both", expand=True)
 
     def clear_page(self):
         if self.current_page is not None:

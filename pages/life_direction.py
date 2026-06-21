@@ -9,7 +9,12 @@ from config.theme import (
     BTN_FILL,  BTN_TEXT, TAPE_BEIGE, TAPE_YELLOW, NEXT_BTN_DASH_THICKNESS,
     NEXT_BTN_DASH_LEN, NEXT_BTN_DASH_GAP_LEN,LARGE_TAPE_SKEW,SUB_FONT, TITLE_FONT,ADD_BUTTON_FONT,
     BADGE_FONT,BTN_FONT)
-from services.life_direction_service import handle_add_direction,get_card_ui, open_config_dialog
+from services.life_direction_service import (
+    handle_add_direction,
+    get_card_ui,
+    open_config_dialog,
+    sort_direction_cards
+)
 
 
 class LifeDirection(Frame):
@@ -57,9 +62,7 @@ class LifeDirection(Frame):
 
         #引入的default数据源life_direction_repo的
         self.direction_cards = direction_cards
-        self.direction_cards.sort(
-            key=lambda c: 0 if c["status"] == "not_configured" else 1
-        )
+        sort_direction_cards(self)
 
         self.draw_ui()
 
@@ -122,7 +125,7 @@ class LifeDirection(Frame):
         self.draw_config_badge()
 
     def draw_config_badge(self):
-        configured = sum(1 for c in self.direction_cards if c["status"] != "not_configured")
+        configured = sum(1 for c in self.direction_cards if c.get("status") == "pending_activation")
         total = len(self.direction_cards)
 
         text = f"{configured} / {total} configured"
@@ -489,7 +492,7 @@ class LifeDirection(Frame):
         return ImageTk.PhotoImage(rounded)
 
     def handle_next(self, event=None):
-        if any(card.get("status") == "not_configured" for card in self.direction_cards):
+        if any(card.get("status") != "pending_activation" for card in self.direction_cards):
             return
 
         if self.on_next:
